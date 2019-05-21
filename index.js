@@ -18,6 +18,8 @@ function S3Readable(opts) {
 
   this.client = opts.client;
   this.params = opts.params;
+  this.onTokenExpiration = opts.onTokenExpiration; // optional param
+
   this.bytesReading = 0;
   this.working = 0;
   this.done = false;
@@ -38,7 +40,9 @@ function S3Readable(opts) {
     if (self.done) return;
     if (err) {
       self.done = true;
-      if (err.code == 'NoSuchKey') err.notFound = true
+      if (err.code == 'NoSuchKey')
+        err.notFound = true
+
       return self.emit('error', err)
     }
     self.working -= 1
@@ -58,14 +62,24 @@ S3Readable.prototype.sip = function (from, numBytes, done) {
   var self = this;
   var params = clone(this.params)
   var rng = params.Range = range(from, numBytes)
-  var req = self.client.getObject(params, function (err, res) {
-    // range is past EOF, can return safely
-    if (err && err.statusCode === 416) return done(null, { data: null })
-    if (err) return done(err)
-    var contentLength = +res.ContentLength;
-    var data = contentLength === 0 ? null : res.Body;
-    done(null, { range: rng, data: data, contentLength: contentLength });
-  });
+
+  const downloadChunk = () =>
+    self.client.getObject(params, function (err, res) {
+      // range is past EOF, can return safely
+      if (err && err.statusCode === 416) return done(null, { data: null })
+      if (err) return done(err)
+
+      var contentLength = +res.ContentLength;
+      var data = contentLength === 0 ? null : res.Body;
+      done(null, { range: rng, data: data, contentLength: contentLength });
+    });
+
+  if (self.client.credentials.needsRefresh() && !self.onTokenExpiration)
+    done({ code: 'OnTokenExpirationOptionMissing', message: 'Token has expired and no function was provided to refresh it.' })
+  else if (self.client.credentials.needsRefresh())
+    self.onTokenExpiration(downloadChunk)
+  else
+    downloadChunk()
 }
 
 function range(from, toRead) {
