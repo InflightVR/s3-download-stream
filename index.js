@@ -23,7 +23,7 @@ function S3Readable(opts) {
   this.done = false;
   // allow for setting chunkSize = null so that default read amount kicks in
   // otherwise, use an optimized chunksize for downloading
-  this.chunkSize = opts.chunkSize === undefined ? 1024*512 : opts.chunkSize;
+  this.chunkSize = opts.chunkSize === undefined ? 1024 * 512 : opts.chunkSize;
   this.concurrency = opts.concurrency || 6;
   this.queue = new SimpleQueue(worker, processed, null, this.concurrency)
   var self = this;
@@ -48,26 +48,26 @@ function S3Readable(opts) {
   }
 }
 
-S3Readable.prototype._read = function(numBytes) {
+S3Readable.prototype._read = function (numBytes) {
   var toQueue = this.concurrency - this.queue._queue.length;
   for (var i = 0; i < toQueue; ++i)
     this.queue.push(this.chunkSize || numBytes);
 }
 
-S3Readable.prototype.sip = function(from, numBytes, done) {
+S3Readable.prototype.sip = function (from, numBytes, done) {
   var self = this;
   var params = clone(this.params)
   var rng = params.Range = range(from, numBytes)
-  var req = self.client.getObject(params, function(err, res){
+  var req = self.client.getObject(params, function (err, res) {
     // range is past EOF, can return safely
     if (err && err.statusCode === 416) return done(null, { data: null })
     if (err) return done(err)
     var contentLength = +res.ContentLength;
-    var data = contentLength === 0? null : res.Body;
-    done(null, {range: rng, data: data, contentLength: contentLength});
+    var data = contentLength === 0 ? null : res.Body;
+    done(null, { range: rng, data: data, contentLength: contentLength });
   });
 }
 
 function range(from, toRead) {
-  return util.format("bytes=%d-%d", from, from+toRead-1);
+  return util.format("bytes=%d-%d", from, from + toRead - 1);
 }
