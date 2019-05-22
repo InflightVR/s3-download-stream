@@ -10,15 +10,14 @@ module.exports = S3Readable;
 function S3Readable(opts) {
   opts = opts || {};
   if (!(this instanceof S3Readable)) return new S3Readable(opts);
-  if (!opts.client) throw Error("S3Readable: client option required (aws-sdk S3 client instance)")
+  if (!opts.getTempCredentials) throw Error("S3Readable: getTempCredentials option required (function that returns a promise with the temporal credentials from cognito)")
   if (!opts.params) throw Error("S3Readable: params option required for getObject call")
   if (!opts.params.Key) throw Error("S3Readable: Key option required for getObject call")
-  if (!opts.params.Bucket) throw Error("S3Readable: Bucket option required for getObject call")
   Readable.call(this, opts)
 
-  this.client = opts.client;
+  this.client = null;
   this.params = opts.params;
-  this.onTokenExpiration = opts.onTokenExpiration; // optional param
+  this.getTempCredentials = opts.getTempCredentials;
 
   this.bytesReading = 0;
   this.working = 0;
@@ -74,11 +73,15 @@ S3Readable.prototype.sip = function (from, numBytes, done) {
       done(null, { range: rng, data: data, contentLength: contentLength });
     });
 
-  if (self.client.credentials.needsRefresh() && !self.onTokenExpiration)
-    done({ code: 'OnTokenExpirationOptionMissing', message: 'Token has expired and no function was provided to refresh it.' })
-  else if (self.client.credentials.needsRefresh())
-    self.onTokenExpiration(downloadChunk)
-  else
+  if (!self.client || !self.client.credentials || self.client.credentials.needsRefresh()) {
+    debug("AWS temp credentials expired or inexisting. Getting new ones...");
+    self.getTempCredentials().then(({ credentials, awsS3Bucket }) => {
+      debug("AWS temp credentials retrieved. Now creating a new S3 client...");
+      self.client = new AWS.S3({ params: { ...self.params, Bucket: awsS3Bucket }, credentials });
+      debug("New S3 Client created. Now continuing downloading chunks...");
+      downloadChunk()
+    })
+  } else
     downloadChunk()
 }
 
