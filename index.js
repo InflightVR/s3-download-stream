@@ -3,6 +3,7 @@ var util = require('util');
 var debug = require('debug')('s3-download-stream');
 var SimpleQueue = require('SimpleQueue');
 var clone = require('clone');
+const AWS = require('aws-sdk')
 util.inherits(S3Readable, Readable);
 
 module.exports = S3Readable;
